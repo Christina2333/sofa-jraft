@@ -41,10 +41,27 @@ import com.alipay.sofa.jraft.rpc.RpcServer;
  */
 public class CounterServer {
 
+    /**
+     * raft相关
+     */
     private RaftGroupService    raftGroupService;
+    /**
+     * raft节点
+     */
     private Node                node;
+    /**
+     * 状态机
+     */
     private CounterStateMachine fsm;
 
+    /**
+     *
+     * @param dataPath  日志存储地址
+     * @param groupId   集群名称
+     * @param serverId  当前节点ip
+     * @param nodeOptions 集群节点ip列表
+     * @throws IOException
+     */
     public CounterServer(final String dataPath, final String groupId, final PeerId serverId,
                          final NodeOptions nodeOptions) throws IOException {
         // 初始化路径

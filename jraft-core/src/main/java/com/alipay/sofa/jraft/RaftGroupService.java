@@ -48,16 +48,19 @@ public class RaftGroupService {
 
     /**
      * This node serverId
+     * 节点的ip端口
      */
     private PeerId              serverId;
 
     /**
      * Node options
+     * 节点配置信息
      */
     private NodeOptions         nodeOptions;
 
     /**
      * The raft RPC server
+     * 每个节点都会启动rpc服务，用户相互通信
      */
     private RpcServer           rpcServer;
 
@@ -68,6 +71,7 @@ public class RaftGroupService {
 
     /**
      * The raft group id
+     * 集群名称
      */
     private String              groupId;
     /**
@@ -125,9 +129,10 @@ public class RaftGroupService {
         }
         //Adds RPC server to Server.
         NodeManager.getInstance().addAddress(this.serverId.getEndpoint());
-
+        // 创建node
         this.node = RaftServiceFactory.createAndInitRaftNode(this.groupId, this.serverId, this.nodeOptions);
         if (startRpcServer) {
+            // 启动rpc服务，节点启动了rpc服务才可以互相通信
             this.rpcServer.init(null);
         } else {
             LOG.warn("RPC server is not started in RaftGroupService.");

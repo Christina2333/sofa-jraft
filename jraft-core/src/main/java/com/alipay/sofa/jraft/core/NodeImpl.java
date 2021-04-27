@@ -531,6 +531,11 @@ public class NodeImpl implements Node, RaftServerService {
         this(null, null);
     }
 
+    /**
+     *
+     * @param groupId 集群名称
+     * @param serverId 节点ip及端口等信息
+     */
     public NodeImpl(final String groupId, final PeerId serverId) {
         super();
         if (groupId != null) {
@@ -538,11 +543,14 @@ public class NodeImpl implements Node, RaftServerService {
         }
         this.groupId = groupId;
         this.serverId = serverId != null ? serverId.copy() : null;
+        // 状态为未初始化
         this.state = State.STATE_UNINITIALIZED;
+        // 初始term为0
         this.currTerm = 0;
         updateLastLeaderTimestamp(Utils.monotonicMs());
         this.confCtx = new ConfigurationCtx(this);
         this.wakingCandidate = null;
+        // 集群中节点的数量
         final int num = GLOBAL_NUM_NODES.incrementAndGet();
         LOG.info("The number of active nodes increment to {}.", num);
     }
@@ -878,6 +886,11 @@ public class NodeImpl implements Node, RaftServerService {
         return ThreadLocalRandom.current().nextInt(timeoutMs, timeoutMs + this.raftOptions.getMaxElectionDelayMs());
     }
 
+    /**
+     * 【重点】创建node之后的初始化
+     * @param opts
+     * @return
+     */
     @Override
     public boolean init(final NodeOptions opts) {
         Requires.requireNonNull(opts, "Null node options");
@@ -886,6 +899,7 @@ public class NodeImpl implements Node, RaftServerService {
         this.serviceFactory = opts.getServiceFactory();
         this.options = opts;
         this.raftOptions = opts.getRaftOptions();
+        // 基于Metrics的性能指标统计，默认为false
         this.metrics = new NodeMetrics(opts.isEnableMetrics());
         this.serverId.setPriority(opts.getElectionPriority());
         this.electionTimeoutCounter = 0;
@@ -895,30 +909,37 @@ public class NodeImpl implements Node, RaftServerService {
             return false;
         }
 
+        // 在该方法中设置过了 com.alipay.sofa.jraft.RaftGroupService.start(boolean)
         if (!NodeManager.getInstance().serverExists(this.serverId.getEndpoint())) {
             LOG.error("No RPC server attached to, did you forget to call addService?");
             return false;
         }
 
+        // 一个全局的定时调度管理器
         this.timerManager = TIMER_FACTORY.getRaftScheduler(this.options.isSharedTimerPool(),
             this.options.getTimerPoolSize(), "JRaft-Node-ScheduleThreadPool");
 
         // Init timers
+        // 投票计数器
         final String suffix = getNodeId().toString();
         String name = "JRaft-VoteTimer-" + suffix;
         this.voteTimer = new RepeatedTimer(name, this.options.getElectionTimeoutMs(), TIMER_FACTORY.getVoteTimer(
             this.options.isSharedVoteTimer(), name)) {
 
+            // 处理投票超时
             @Override
             protected void onTrigger() {
                 handleVoteTimeout();
             }
 
+            // 随机返回一个一定范围内的时间
             @Override
             protected int adjustTimeout(final int timeoutMs) {
                 return randomTimeout(timeoutMs);
             }
         };
+
+
         name = "JRaft-ElectionTimer-" + suffix;
         this.electionTimer = new RepeatedTimer(name, this.options.getElectionTimeoutMs(),
             TIMER_FACTORY.getElectionTimer(this.options.isSharedElectionTimer(), name)) {
@@ -933,6 +954,8 @@ public class NodeImpl implements Node, RaftServerService {
                 return randomTimeout(timeoutMs);
             }
         };
+
+        // leader下台的计时器，定时检查是否需要重新选举，检查leader的follower有没有超过majority
         name = "JRaft-StepDownTimer-" + suffix;
         this.stepDownTimer = new RepeatedTimer(name, this.options.getElectionTimeoutMs() >> 1,
             TIMER_FACTORY.getStepDownTimer(this.options.isSharedStepDownTimer(), name)) {
@@ -942,6 +965,8 @@ public class NodeImpl implements Node, RaftServerService {
                 handleStepDownTimeout();
             }
         };
+
+        // 快照计时器，每隔1小时生成一个快照
         name = "JRaft-SnapshotTimer-" + suffix;
         this.snapshotTimer = new RepeatedTimer(name, this.options.getSnapshotIntervalSecs() * 1000,
             TIMER_FACTORY.getSnapshotTimer(this.options.isSharedSnapshotTimer(), name)) {
@@ -972,6 +997,7 @@ public class NodeImpl implements Node, RaftServerService {
 
         this.configManager = new ConfigurationManager();
 
+        // 初始化一个disruptor（一个高性能的多线程消息框架），采用多生产者模式
         this.applyDisruptor = DisruptorBuilder.<LogEntryAndClosure> newInstance() //
             .setRingBufferSize(this.raftOptions.getDisruptorBufferSize()) //
             .setEventFactory(new LogEntryAndClosureFactory()) //
@@ -982,24 +1008,33 @@ public class NodeImpl implements Node, RaftServerService {
         this.applyDisruptor.handleEventsWith(new LogEntryAndClosureHandler());
         this.applyDisruptor.setDefaultExceptionHandler(new LogExceptionHandler<Object>(getClass().getSimpleName()));
         this.applyQueue = this.applyDisruptor.start();
+
+        // 设置metrics性能指标统计
         if (this.metrics.getMetricRegistry() != null) {
             this.metrics.getMetricRegistry().register("jraft-node-impl-disruptor",
                 new DisruptorMetricSet(this.applyQueue));
         }
 
+        // 封装对业务 StateMachine 的状态转换的调用以及日志的写入等
         this.fsmCaller = new FSMCallerImpl();
+
+        // 初始化日志存储
         if (!initLogStorage()) {
             LOG.error("Node {} initLogStorage failed.", getNodeId());
             return false;
         }
+        // 初始化元数据存储
         if (!initMetaStorage()) {
             LOG.error("Node {} initMetaStorage failed.", getNodeId());
             return false;
         }
+        // 初始化fsmCaller
         if (!initFSMCaller(new LogId(0, 0))) {
             LOG.error("Node {} initFSMCaller failed.", getNodeId());
             return false;
         }
+
+        // 实例化投票箱
         this.ballotBox = new BallotBox();
         final BallotBoxOptions ballotBoxOpts = new BallotBoxOptions();
         ballotBoxOpts.setWaiter(this.fsmCaller);
@@ -1009,18 +1044,24 @@ public class NodeImpl implements Node, RaftServerService {
             return false;
         }
 
+        // 初始化snapshot存储
         if (!initSnapshotStorage()) {
             LOG.error("Node {} initSnapshotStorage failed.", getNodeId());
             return false;
         }
 
+        // 校验日志文件索引的一致性
         final Status st = this.logManager.checkConsistency();
         if (!st.isOk()) {
             LOG.error("Node {} is initialized with inconsistent log, status={}.", getNodeId(), st);
             return false;
         }
+
+        // 配置管理raft group中的信息
         this.conf = new ConfigurationEntry();
         this.conf.setId(new LogId());
+
+        // log初始化
         // if have log using conf in log, else using conf in options
         if (this.logManager.getLastLogIndex() > 0) {
             checkAndSetConfiguration(false);
@@ -1036,6 +1077,7 @@ public class NodeImpl implements Node, RaftServerService {
             LOG.info("Init node {} with empty conf.", this.serverId);
         }
 
+        // 设置replicatorGroup和rpcService
         // TODO RPC service and ReplicatorGroup is in cycle dependent, refactor it
         this.replicatorGroup = new ReplicatorGroupImpl();
         this.rpcService = new DefaultRaftClientService(this.replicatorGroup);
@@ -1059,6 +1101,7 @@ public class NodeImpl implements Node, RaftServerService {
         }
         this.replicatorGroup.init(new NodeId(this.groupId, this.serverId), rgOpts);
 
+        // 只读服务
         this.readOnlyService = new ReadOnlyServiceImpl();
         final ReadOnlyServiceOptions rosOpts = new ReadOnlyServiceOptions();
         rosOpts.setFsmCaller(this.fsmCaller);
@@ -1084,6 +1127,7 @@ public class NodeImpl implements Node, RaftServerService {
         }
 
         if (!this.conf.isEmpty()) {
+            // 新启动的node需要重新选举
             stepDown(this.currTerm, false, new Status());
         }
 
