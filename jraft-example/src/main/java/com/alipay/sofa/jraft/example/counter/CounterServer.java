@@ -86,7 +86,7 @@ public class CounterServer {
         nodeOptions.setSnapshotUri(dataPath + File.separator + "snapshot");
         // 初始化 raft group 服务框架
         this.raftGroupService = new RaftGroupService(groupId, serverId, nodeOptions, rpcServer);
-        // 启动
+        // 【重点】启动，主要是创建一个node并初始化
         this.node = this.raftGroupService.start();
     }
 

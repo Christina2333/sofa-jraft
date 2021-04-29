@@ -60,21 +60,34 @@ public class HashedWheelTimer implements Timer {
                                                                                                     HashedWheelTimer.class,
                                                                                                     "workerState");
 
+    /**
+     * 操作wheel中的定时任务
+     */
     private final Worker                                             worker                 = new Worker();
     private final Thread                                             workerThread;
 
+    // worker的状态
     public static final int                                          WORKER_STATE_INIT      = 0;
     public static final int                                          WORKER_STATE_STARTED   = 1;
     public static final int                                          WORKER_STATE_SHUTDOWN  = 2;
     @SuppressWarnings({ "unused", "FieldMayBeFinal" })
     private volatile int                                             workerState;                                                  // 0 - init, 1 - started, 2 - shut down
 
+    /**
+     * 圆盘中每个格子代表的时间间隔
+     */
     private final long                                               tickDuration;
     private final HashedWheelBucket[]                                wheel;
     private final int                                                mask;
     private final CountDownLatch                                     startTimeInitialized   = new CountDownLatch(1);
+    /**
+     * 定时任务项，内部封装了TimerTask
+     */
     private final Queue<HashedWheelTimeout>                          timeouts               = new ConcurrentLinkedQueue<>();
     private final Queue<HashedWheelTimeout>                          cancelledTimeouts      = new ConcurrentLinkedQueue<>();
+    /**
+     * 在阻塞中的定时任务
+     */
     private final AtomicLong                                         pendingTimeouts        = new AtomicLong(0);
     private final long                                               maxPendingTimeouts;
 
@@ -167,9 +180,9 @@ public class HashedWheelTimer implements Timer {
      * @param threadFactory      a {@link ThreadFactory} that creates a
      *                           background {@link Thread} which is dedicated to
      *                           {@link TimerTask} execution.
-     * @param tickDuration       the duration between tick
+     * @param tickDuration       the duration between tick 每个格子代表的时间间隔，即为时间轮可以调度的最小时间粒度
      * @param unit               the time unit of the {@code tickDuration}
-     * @param ticksPerWheel      the size of the wheel
+     * @param ticksPerWheel      the size of the wheel 时间轮格子数量
      * @param maxPendingTimeouts The maximum number of pending timeouts after which call to
      *                           {@code newTimeout} will result in
      *                           {@link RejectedExecutionException}
@@ -195,13 +208,16 @@ public class HashedWheelTimer implements Timer {
         }
 
         // Normalize ticksPerWheel to power of two and initialize the wheel.
+        // 创建时间轮数组，长度为最接近ticksPerWheel的2的n次幂
         wheel = createWheel(ticksPerWheel);
+        // 用于快速计算任务在哪个时间格子，例如一个deadline任务的格子是deadline%(wheel.length) == deadline&mask (deadline是任务的延迟时间)
+        // 因为计算%很耗时，这里通过&的方式降低计算成本。因为wheel.length为2的n次幂，2^n-1除第一位均为1，因此deadline%(wheel.length) == deadline&mask
         mask = wheel.length - 1;
 
-        // Convert tickDuration to nanos.
+        // Convert tickDuration to nanos. 时间片转为ns
         this.tickDuration = unit.toNanos(tickDuration);
 
-        // Prevent overflow.
+        // Prevent overflow. 防止tickDuration*wheel.length溢出
         if (this.tickDuration >= Long.MAX_VALUE / wheel.length) {
             throw new IllegalArgumentException(String.format(
                 "tickDuration: %d (expected: 0 < tickDuration in nanos < %d", tickDuration, Long.MAX_VALUE
@@ -211,6 +227,7 @@ public class HashedWheelTimer implements Timer {
 
         this.maxPendingTimeouts = maxPendingTimeouts;
 
+        // 由于计数器比较消耗资源，因此如果个数超过阈值或打印error
         if (instanceCounter.incrementAndGet() > INSTANCE_COUNT_LIMIT
             && warnedTooManyInstances.compareAndSet(false, true)) {
             reportTooManyInstances();
@@ -237,7 +254,7 @@ public class HashedWheelTimer implements Timer {
         if (ticksPerWheel > 1073741824) {
             throw new IllegalArgumentException("ticksPerWheel may not be greater than 2^30: " + ticksPerWheel);
         }
-
+        // 计算最接近ticksPerWheel的2的n次幂
         ticksPerWheel = normalizeTicksPerWheel(ticksPerWheel);
         HashedWheelBucket[] wheel = new HashedWheelBucket[ticksPerWheel];
         for (int i = 0; i < wheel.length; i++) {
@@ -262,6 +279,7 @@ public class HashedWheelTimer implements Timer {
      *                               {@linkplain #stop() stopped} already
      */
     public void start() {
+        // 设置worker状态
         switch (workerStateUpdater.get(this)) {
             case WORKER_STATE_INIT:
                 if (workerStateUpdater.compareAndSet(this, WORKER_STATE_INIT, WORKER_STATE_STARTED)) {
@@ -276,7 +294,7 @@ public class HashedWheelTimer implements Timer {
                 throw new Error("Invalid WorkerState");
         }
 
-        // Wait until the startTime is initialized by the worker.
+        // Wait until the startTime is initialized by the worker. 如果worker没启动就会一直阻塞
         while (startTime == 0) {
             try {
                 startTimeInitialized.await();
@@ -322,6 +340,13 @@ public class HashedWheelTimer implements Timer {
         return worker.unprocessedTimeouts();
     }
 
+    /**
+     * 把任务放入时间轮中
+     * @param task  任务
+     * @param delay 延时时间
+     * @param unit  时间单位
+     * @return
+     */
     @Override
     public Timeout newTimeout(TimerTask task, long delay, TimeUnit unit) {
         if (task == null) {
@@ -330,26 +355,27 @@ public class HashedWheelTimer implements Timer {
         if (unit == null) {
             throw new NullPointerException("unit");
         }
-
+        // 阻塞中的定时任务数++
         long pendingTimeoutsCount = pendingTimeouts.incrementAndGet();
-
+        // 阻塞任务数大于最大限制时抛异常
         if (maxPendingTimeouts > 0 && pendingTimeoutsCount > maxPendingTimeouts) {
             pendingTimeouts.decrementAndGet();
             throw new RejectedExecutionException("Number of pending timeouts (" + pendingTimeoutsCount
                                                  + ") is greater than or equal to maximum allowed pending "
                                                  + "timeouts (" + maxPendingTimeouts + ")");
         }
-
+        // 如果时间轮没有启动，就会启动时间轮
         start();
 
-        // Add the timeout to the timeout queue which will be processed on the next tick.
+        // Add the timeout to the timeout queue which will be processed on the next tick. 计算距离任务开始的时间差
         // During processing all the queued HashedWheelTimeouts will be added to the correct HashedWheelBucket.
         long deadline = System.nanoTime() + unit.toNanos(delay) - startTime;
 
-        // Guard against overflow.
+        // Guard against overflow. 防止溢出超过long的最大值
         if (delay > 0 && deadline < 0) {
             deadline = Long.MAX_VALUE;
         }
+        // 将任务添加到timeouts中等待执行
         HashedWheelTimeout timeout = new HashedWheelTimeout(this, task, deadline);
         timeouts.add(timeout);
         return timeout;
@@ -388,10 +414,14 @@ public class HashedWheelTimer implements Timer {
             do {
                 final long deadline = waitForNextTick();
                 if (deadline > 0) {
+                    // 计算时间轮的槽位
                     int idx = (int) (tick & mask);
+                    // 移除timeouts中的
                     processCancelledTasks();
                     HashedWheelBucket bucket = wheel[idx];
+                    // 从待执行队列（timeouts）中移出10000个，放在指定bucket中
                     transferTimeoutsToBuckets();
+                    // 执行对应bucket中的任务（是一个链表）
                     bucket.expireTimeouts(deadline);
                     tick++;
                 }
@@ -406,13 +436,18 @@ public class HashedWheelTimer implements Timer {
                 if (timeout == null) {
                     break;
                 }
+                // 没处理的任务放入unprocessedTimeouts队列
                 if (!timeout.isCancelled()) {
                     unprocessedTimeouts.add(timeout);
                 }
             }
+            // 处理被取消的任务
             processCancelledTasks();
         }
 
+        /**
+         * 从timeouts中移出100000个timeout放在指定bucket中
+         */
         private void transferTimeoutsToBuckets() {
             // transfer only max. 100000 timeouts per tick to prevent a thread to stale the workerThread when it just
             // adds new timeouts in a loop.
@@ -427,12 +462,16 @@ public class HashedWheelTimer implements Timer {
                     continue;
                 }
 
+                // tick次数
                 long calculated = timeout.deadline / tickDuration;
+                // 计算这个timeout还要轮几圈才能执行
                 timeout.remainingRounds = (calculated - tick) / wheel.length;
 
+                // 如果任务在timeouts队列里面放久了, 以至于已经过了执行时间, 这个时候就使用当前tick, 也就是放到当前bucket, 此方法调用完后就会被执行
                 final long ticks = Math.max(calculated, tick); // Ensure we don't schedule for past.
                 int stopIndex = (int) (ticks & mask);
 
+                // 计算这个timeout应该在哪个bucket中执行
                 HashedWheelBucket bucket = wheel[stopIndex];
                 bucket.addTimeout(timeout);
             }
@@ -461,6 +500,7 @@ public class HashedWheelTimer implements Timer {
          *
          * @return Long.MIN_VALUE if received a shutdown request,
          * current time otherwise (with Long.MIN_VALUE changed by +1)
+         * sleep, 直到下次tick到来, 然后返回该次tick和启动时间之间的时长
          */
         private long waitForNextTick() {
             long deadline = tickDuration * (tick + 1);
@@ -664,6 +704,7 @@ public class HashedWheelTimer implements Timer {
 
         /**
          * Expire all {@link HashedWheelTimeout}s for the given {@code deadline}.
+         * 遍历执行bucket格子中所有的任务
          */
         public void expireTimeouts(long deadline) {
             HashedWheelTimeout timeout = head;
@@ -672,8 +713,10 @@ public class HashedWheelTimer implements Timer {
             while (timeout != null) {
                 HashedWheelTimeout next = timeout.next;
                 if (timeout.remainingRounds <= 0) {
+                    // 从bucket中移出这个timeout
                     next = remove(timeout);
                     if (timeout.deadline <= deadline) {
+                        // 执行
                         timeout.expire();
                     } else {
                         // The timeout was placed into a wrong slot. This should never happen.
@@ -683,6 +726,7 @@ public class HashedWheelTimer implements Timer {
                 } else if (timeout.isCancelled()) {
                     next = remove(timeout);
                 } else {
+                    // 走了一圈，remainingRounds--
                     timeout.remainingRounds--;
                 }
                 timeout = next;
