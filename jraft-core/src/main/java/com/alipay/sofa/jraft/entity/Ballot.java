@@ -70,7 +70,7 @@ public class Ballot {
                 this.peers.add(new UnfoundPeerId(peer, index++, false));
             }
         }
-
+        // 设置quorum，会在投票过程中--，当减到0就说明预投票成功
         this.quorum = this.peers.size() / 2 + 1;
         if (oldConf == null) {
             return true;
@@ -84,7 +84,15 @@ public class Ballot {
         return true;
     }
 
+    /**
+     * 从peers中寻找peerId
+     * @param peerId
+     * @param peers
+     * @param posHint
+     * @return
+     */
     private UnfoundPeerId findPeer(final PeerId peerId, final List<UnfoundPeerId> peers, final int posHint) {
+        // 如果是第一次查询需要遍历
         if (posHint < 0 || posHint >= peers.size() || !peers.get(posHint).peerId.equals(peerId)) {
             for (final UnfoundPeerId ufp : peers) {
                 if (ufp.peerId.equals(peerId)) {
@@ -93,14 +101,22 @@ public class Ballot {
             }
             return null;
         }
-
+        // 如果不是第一次获取可以直接返回
         return peers.get(posHint);
     }
 
+    /**
+     * 选票箱得到peerId投的一票
+     * @param peerId
+     * @param hint
+     * @return
+     */
     public PosHint grant(final PeerId peerId, final PosHint hint) {
+        // 会从peerId列表中找到该节点
         UnfoundPeerId peer = findPeer(peerId, this.peers, hint.pos0);
         if (peer != null) {
             if (!peer.found) {
+                // 如果能找到peer节点，并且之前没被记录过，记一票，即quorum--
                 peer.found = true;
                 this.quorum--;
             }
@@ -126,13 +142,17 @@ public class Ballot {
         return hint;
     }
 
+    /**
+     * 选票箱得到peerId投的一票
+     * @param peerId
+     */
     public void grant(final PeerId peerId) {
         grant(peerId, new PosHint());
     }
 
     /**
      * Returns true when the ballot is granted.
-     *
+     * 判断自己是否选举成功(是否达到半数响应，从半数值减到0)
      * @return true if the ballot is granted
      */
     public boolean isGranted() {
