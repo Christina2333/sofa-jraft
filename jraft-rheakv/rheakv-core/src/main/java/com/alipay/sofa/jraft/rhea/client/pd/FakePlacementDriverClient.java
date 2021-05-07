@@ -69,6 +69,7 @@ public class FakePlacementDriverClient extends AbstractPlacementDriverClient {
     @Override
     public Store getStoreMetadata(final StoreEngineOptions opts) {
         final Store store = new Store();
+        // rOptsList和regionList相对应
         final List<RegionEngineOptions> rOptsList = opts.getRegionEngineOptionsList();
         final List<Region> regionList = Lists.newArrayListWithCapacity(rOptsList.size());
         store.setId(-1);

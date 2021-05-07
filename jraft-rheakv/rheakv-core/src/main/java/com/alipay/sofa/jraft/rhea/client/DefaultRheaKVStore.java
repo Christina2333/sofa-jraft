@@ -223,7 +223,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
         DescriberManager.getInstance().addDescriber(RouteTable.getInstance());
 
         this.opts = opts;
-        // init placement driver
+        // init placement driver 1.初始化PD（PD是全局的中心总控节点，负责整个集群的调度管理，维护RegionRouteTable 路由表）
         final PlacementDriverOptions pdOpts = opts.getPlacementDriverOptions();
         final String clusterName = opts.getClusterName();
         Requires.requireNonNull(pdOpts, "opts.placementDriverOptions");
@@ -241,7 +241,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
             LOG.error("Fail to init [PlacementDriverClient].");
             return false;
         }
-        // init store engine
+        // init store engine 【重点】2.初始化存储引擎，目前仅支持RocksDB和MemoryDB
         final StoreEngineOptions stOpts = opts.getStoreEngineOptions();
         if (stOpts != null) {
             stOpts.setInitialServerList(opts.getInitialServerList());
@@ -254,6 +254,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
         final Endpoint selfEndpoint = this.storeEngine == null ? null : this.storeEngine.getSelfEndpoint();
         final RpcOptions rpcOpts = opts.getRpcOptions();
         Requires.requireNonNull(rpcOpts, "opts.rpcOptions");
+        // 3.初始化一个RpcService，并重写getLeader方法
         this.rheaKVRpcService = new DefaultRheaKVRpcService(this.pdClient, selfEndpoint) {
 
             @Override
@@ -269,15 +270,20 @@ public class DefaultRheaKVStore implements RheaKVStore {
             LOG.error("Fail to init [RheaKVRpcService].");
             return false;
         }
+        // 重试次数
         this.failoverRetries = opts.getFailoverRetries();
+        // 超时时间
         this.futureTimeoutMillis = opts.getFutureTimeoutMillis();
+        // 是否只从leader读数据
         this.onlyLeaderRead = opts.isOnlyLeaderRead();
+        // 4.初始化kvDispatcher， 这里默认为true
         if (opts.isUseParallelKVExecutor()) {
             final int numWorkers = Utils.cpus();
             final int bufSize = numWorkers << 4;
             final String name = "parallel-kv-executor";
             final ThreadFactory threadFactory = Constants.THREAD_AFFINITY_ENABLED
                     ? new AffinityNamedThreadFactory(name, true) : new NamedThreadFactory(name, true);
+            // 初始化Dispatcher
             this.kvDispatcher = new TaskDispatcher(bufSize, numWorkers, WaitStrategyType.LITE_BLOCKING_WAIT, threadFactory);
         }
         this.batchingOpts = opts.getBatchingOptions();
@@ -995,6 +1001,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
 
     private CompletableFuture<Boolean> put(final byte[] key, final byte[] value,
                                            final CompletableFuture<Boolean> future, final boolean tryBatching) {
+        // 校验rheaKVStore是否初始化完成
         checkState();
         if (tryBatching) {
             final PutBatching putBatching = this.putBatching;
@@ -1165,7 +1172,9 @@ public class DefaultRheaKVStore implements RheaKVStore {
         checkState();
         Requires.requireNonNull(entries, "entries");
         Requires.requireTrue(!entries.isEmpty(), "entries empty");
+        // 存放数据
         final FutureGroup<Boolean> futureGroup = internalPut(entries, this.failoverRetries, null);
+        // 处理返回状态
         return FutureHelper.joinBooleans(futureGroup);
     }
 
@@ -1793,6 +1802,9 @@ public class DefaultRheaKVStore implements RheaKVStore {
         }
     }
 
+    /**
+     * 批量处理event时间的handler
+     */
     private class PutBatchingHandler extends AbstractBatchingHandler<KVEvent> {
 
         public PutBatchingHandler(String metricsName) {
@@ -1802,13 +1814,15 @@ public class DefaultRheaKVStore implements RheaKVStore {
         @SuppressWarnings("unchecked")
         @Override
         public void onEvent(final KVEvent event, final long sequence, final boolean endOfBatch) throws Exception {
+            // 1.把传入的时间加入到集合中
             this.events.add(event);
             this.cachedBytes += event.kvEntry.length();
             final int size = this.events.size();
+            // 2. 如果不是最后一个event，也没有这么多数量的数据，那么就不发送
             if (!endOfBatch && size < batchingOpts.getBatchSize() && this.cachedBytes < batchingOpts.getMaxWriteBytes()) {
                 return;
             }
-
+            // 3.如果传入的size为1，那么就重新调用put方法放入到Batching里面
             if (size == 1) {
                 reset();
                 final KVEntry kv = event.kvEntry;
@@ -1818,6 +1832,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
                     exceptionally(t, event.future);
                 }
             } else {
+                // 4.如果size不为1，那么把数据遍历到集合里面批量处理
                 final List<KVEntry> entries = Lists.newArrayListWithCapacity(size);
                 final CompletableFuture<Boolean>[] futures = new CompletableFuture[size];
                 for (int i = 0; i < size; i++) {
@@ -1827,6 +1842,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
                 }
                 reset();
                 try {
+                    // 当put方法完成后执行whenComplete中的内容
                     put(entries).whenComplete((result, throwable) -> {
                         if (throwable == null) {
                             for (int i = 0; i < futures.length; i++) {
@@ -1899,6 +1915,13 @@ public class DefaultRheaKVStore implements RheaKVStore {
         protected final Disruptor<T>  disruptor;
         protected final RingBuffer<T> ringBuffer;
 
+        /**
+         *
+         * @param factory  创建event的factory
+         * @param bufSize  ringBuffer大小
+         * @param name
+         * @param handler  处理event的函数
+         */
         @SuppressWarnings("unchecked")
         public Batching(EventFactory<T> factory, int bufSize, String name, EventHandler<T> handler) {
             this.name = name;

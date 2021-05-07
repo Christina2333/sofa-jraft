@@ -283,7 +283,7 @@ public class NodeImpl implements Node, RaftServerService {
 
     /**
      * Event handler.
-     *
+     * disruptor处理event的函数
      * @author boyan (boyan@alibaba-inc.com)
      *
      * 2018-Apr-03 4:30:07 PM

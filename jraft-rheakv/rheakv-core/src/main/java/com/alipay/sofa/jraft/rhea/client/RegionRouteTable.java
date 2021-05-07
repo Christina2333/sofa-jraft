@@ -92,7 +92,9 @@ public class RegionRouteTable {
     private static final Comparator<byte[]>  keyBytesComparator = BytesUtil.getDefaultByteArrayComparator();
 
     private final StampedLock                stampedLock        = new StampedLock();
+    // key：startKey，value：regionId
     private final NavigableMap<byte[], Long> rangeTable         = new TreeMap<>(keyBytesComparator);
+    // key：regionId，value：region
     private final Map<Long, Region>          regionTable        = Maps.newHashMap();
 
     public Region getRegionById(final long regionId) {

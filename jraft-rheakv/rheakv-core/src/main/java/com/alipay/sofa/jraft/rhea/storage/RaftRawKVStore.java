@@ -374,6 +374,11 @@ public class RaftRawKVStore implements RawKVStore {
         applyOperation(KVOperation.createNodeExecutor(nodeExecutor), closure);
     }
 
+    /**
+     * kv数据库的增删改查基本均会调用该方法
+     * @param op
+     * @param closure
+     */
     private void applyOperation(final KVOperation op, final KVStoreClosure closure) {
         if (!isLeader()) {
             closure.setError(Errors.NOT_LEADER);

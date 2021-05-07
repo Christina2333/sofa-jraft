@@ -135,6 +135,8 @@ public class RegionEngine implements Lifecycle<RegionEngineOptions>, Describer {
         if (this.node != null) {
             final RawKVStore rawKVStore = this.storeEngine.getRawKVStore();
             final Executor readIndexExecutor = this.storeEngine.getReadIndexExecutor();
+            // RaftRawKVStore 是 RheaKV 基于 Raft 复制状态机 KVStoreStateMachine 的 RawKVStore 接口 KV 存储实现
+            // RheaKV 的 Raft 入口，从这里开始 Raft 流程
             this.raftRawKVStore = new RaftRawKVStore(this.node, rawKVStore, readIndexExecutor);
             this.metricsRawKVStore = new MetricsRawKVStore(this.region.getId(), this.raftRawKVStore);
             // metrics config

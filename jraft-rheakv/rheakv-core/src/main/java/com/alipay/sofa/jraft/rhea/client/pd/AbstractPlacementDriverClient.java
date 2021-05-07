@@ -405,6 +405,7 @@ public abstract class AbstractPlacementDriverClient implements PlacementDriverCl
         Requires.requireTrue(Strings.isNotBlank(initialServerList), "opts.initialServerList is blank");
         conf.parse(initialServerList);
         region.setPeers(JRaftHelper.toPeerList(conf.listPeers()));
+        // 将region存放在regionRouteTable中
         this.regionRouteTable.addOrUpdateRegion(region);
         return region;
     }
