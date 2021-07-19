@@ -101,6 +101,7 @@ public class RaftRpcServerFactory {
         rpcServer.registerProcessor(appendEntriesRequestProcessor);
         rpcServer.registerProcessor(new GetFileRequestProcessor(raftExecutor));
         rpcServer.registerProcessor(new InstallSnapshotRequestProcessor(raftExecutor));
+        // 处理预投票的响应
         rpcServer.registerProcessor(new RequestVoteRequestProcessor(raftExecutor));
         rpcServer.registerProcessor(new PingRequestProcessor());
         rpcServer.registerProcessor(new TimeoutNowRequestProcessor(raftExecutor));

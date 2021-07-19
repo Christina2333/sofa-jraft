@@ -40,7 +40,9 @@ public abstract class RepeatedTimer implements Describer {
     public static final Logger LOG  = LoggerFactory.getLogger(RepeatedTimer.class);
 
     private final Lock         lock = new ReentrantLock();
+    // HashedWheelTimer
     private final Timer        timer;
+    // HashedWheelTimeout
     private Timeout            timeout;
     private boolean            stopped;
     private volatile boolean   running;
@@ -80,9 +82,13 @@ public abstract class RepeatedTimer implements Describer {
         return timeoutMs;
     }
 
+    /**
+     * 如果没有调用stop或者destroy会执行onTrigger并执行schedule
+     */
     public void run() {
         this.invoking = true;
         try {
+            // 调用定时器
             onTrigger();
         } catch (final Throwable t) {
             LOG.error("Run timer failed.", t);
@@ -91,6 +97,7 @@ public abstract class RepeatedTimer implements Describer {
         this.lock.lock();
         try {
             this.invoking = false;
+            // stopped为false时执行
             if (this.stopped) {
                 this.running = false;
                 invokeDestroyed = this.destroyed;
@@ -132,15 +139,20 @@ public abstract class RepeatedTimer implements Describer {
      * Start the timer.
      */
     public void start() {
+        // 只有一个线程能调用该方法，调用了之后就无法再启动
         this.lock.lock();
         try {
+            // 默认是false
             if (this.destroyed) {
                 return;
             }
+            // 创建时为true
             if (!this.stopped) {
                 return;
             }
+            // 启动完一次后下次就无法再次往下继续
             this.stopped = false;
+            // 默认为false
             if (this.running) {
                 return;
             }

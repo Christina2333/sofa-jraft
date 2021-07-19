@@ -29,7 +29,13 @@ public enum State {
     STATE_FOLLOWER, // It's a follower
     STATE_ERROR, // It's in error
     STATE_UNINITIALIZED, // It's uninitialized
+    /**
+     * 正在停止
+     */
     STATE_SHUTTING, // It's shutting down
+    /**
+     * 已经停止
+     */
     STATE_SHUTDOWN, // It's shutdown already
     STATE_END; // State end
 

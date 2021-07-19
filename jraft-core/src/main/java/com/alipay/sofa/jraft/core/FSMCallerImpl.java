@@ -143,6 +143,13 @@ public class FSMCallerImpl implements FSMCaller {
         // max committed index in current batch, reset to -1 every batch
         private long maxCommittedIndex = -1;
 
+        /**
+         * 有任务到达taskQueue时会调用该方法处理事件
+         * @param event
+         * @param sequence
+         * @param endOfBatch
+         * @throws Exception
+         */
         @Override
         public void onEvent(final ApplyTask event, final long sequence, final boolean endOfBatch) throws Exception {
             this.maxCommittedIndex = runApplyTask(event, this.maxCommittedIndex, endOfBatch);
@@ -232,6 +239,7 @@ public class FSMCallerImpl implements FSMCaller {
             LOG.warn("FSMCaller is stopped, can not apply new task.");
             return false;
         }
+        // 使用Disruptor发布事件
         if (!this.taskQueue.tryPublishEvent(tpl)) {
             setError(new RaftException(ErrorType.ERROR_TYPE_STATE_MACHINE, new Status(RaftError.EBUSY,
                 "FSMCaller is overload.")));
@@ -367,6 +375,13 @@ public class FSMCallerImpl implements FSMCaller {
         }
     }
 
+    /**
+     * 对各种任务进行处理
+     * @param task
+     * @param maxCommittedIndex
+     * @param endOfBatch
+     * @return
+     */
     @SuppressWarnings("ConstantConditions")
     private long runApplyTask(final ApplyTask task, long maxCommittedIndex, final boolean endOfBatch) {
         CountDownLatch shutdown = null;

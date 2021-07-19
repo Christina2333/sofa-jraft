@@ -35,6 +35,7 @@ import com.alipay.sofa.jraft.util.Utils;
  * @author boyan (boyan@alibaba-inc.com)
  *
  * 2018-Mar-12 3:27:37 PM
+ * 一个raft节点
  */
 public class PeerId implements Copiable<PeerId>, Serializable, Checksum {
 
@@ -42,11 +43,11 @@ public class PeerId implements Copiable<PeerId>, Serializable, Checksum {
 
     private static final Logger LOG              = LoggerFactory.getLogger(PeerId.class);
 
-    /** Peer address. */
+    /** Peer address. 当前节点ip和端口 */
     private Endpoint            endpoint         = new Endpoint(Utils.IP_ANY, 0);
     /** Index in same addr, default is 0. */
     private int                 idx;
-    /** Cached toString result. */
+    /** Cached toString result. 节点ip端口的字符串形式 */
     private String              str;
 
     /** Node's local priority value, if node don't support priority election, this value is -1. */
@@ -189,7 +190,8 @@ public class PeerId implements Copiable<PeerId>, Serializable, Checksum {
      * PeerId.parse("a:b::d")       = new PeerId("a", "b", 0, "d")
      * PeerId.parse("a:b:c:d")      = new PeerId("a", "b", "c", "d")
      * </pre>
-     *
+     * 形如 ${ip}:${port}:${idx}:${priority}
+     * 一般为 127.0.0.1:8080 即idx和priority均为默认值0
      */
     public boolean parse(final String s) {
         if (StringUtils.isEmpty(s)) {

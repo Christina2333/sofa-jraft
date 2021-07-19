@@ -53,6 +53,9 @@ public class ReplicatorGroupImpl implements ReplicatorGroup {
     private static final Logger                   LOG                = LoggerFactory
                                                                          .getLogger(ReplicatorGroupImpl.class);
 
+    /**
+     * 存放集群所有节点
+     */
     // <peerId, replicatorId>
     private final ConcurrentMap<PeerId, ThreadId> replicatorMap      = new ConcurrentHashMap<>();
     /** common replicator options */
@@ -109,6 +112,13 @@ public class ReplicatorGroupImpl implements ReplicatorGroup {
         return this.replicatorMap.get(peer);
     }
 
+    /**
+     * 某个节点加入replicatorMap
+     * @param peer           target peer
+     * @param replicatorType replicator type
+     * @param sync           synchronous
+     * @return
+     */
     @Override
     public boolean addReplicator(final PeerId peer, final ReplicatorType replicatorType, final boolean sync) {
         Requires.requireTrue(this.commonOptions.getTerm() != 0);
@@ -175,15 +185,19 @@ public class ReplicatorGroupImpl implements ReplicatorGroup {
     @Override
     public void checkReplicator(final PeerId peer, final boolean lockNode) {
         final ThreadId rid = this.replicatorMap.get(peer);
+        // 说明这个节点没被leader发现
         if (rid == null) {
             // Create replicator if it's not found for leader.
+            // 获取自己节点信息
             final NodeImpl node = this.commonOptions.getNode();
             if (lockNode) {
                 node.writeLock.lock();
             }
             try {
+                // 如果当前的节点是leader，并且传入的peer在failureReplicators中，那么重新添加到replicatorMap
                 if (node.isLeader()) {
                     final ReplicatorType rType = this.failureReplicators.get(peer);
+                    // 如果peer在failureReplicators中，把它加入replicatorMap，并从failureReplicators中移出
                     if (rType != null && addReplicator(peer, rType, false)) {
                         this.failureReplicators.remove(peer, rType);
                     }

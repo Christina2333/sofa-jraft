@@ -33,7 +33,7 @@ import com.google.protobuf.Message;
 
 /**
  * Process get leader request.
- *
+ * server端处理获取leader的请求
  * @author boyan (boyan@alibaba-inc.com)
  * @author jiachun.fjc
  */
@@ -64,6 +64,7 @@ public class GetLeaderRequestProcessor extends BaseCliRequestProcessor<GetLeader
     public Message processRequest(final GetLeaderRequest request, final RpcRequestClosure done) {
         List<Node> nodes = new ArrayList<>();
         final String groupId = getGroupId(request);
+        // 请求中有peerId时，只请求该peerId
         if (request.hasPeerId()) {
             final String peerIdStr = getPeerId(request);
             final PeerId peer = new PeerId();
@@ -71,20 +72,21 @@ public class GetLeaderRequestProcessor extends BaseCliRequestProcessor<GetLeader
                 final Status st = new Status();
                 nodes.add(getNode(groupId, peer, st));
                 if (!st.isOk()) {
-                    return RpcFactoryHelper //
-                        .responseFactory() //
+                    return RpcFactoryHelper
+                        .responseFactory()
                         .newResponse(defaultResp(), st);
                 }
             } else {
-                return RpcFactoryHelper //
-                    .responseFactory() //
+                return RpcFactoryHelper
+                    .responseFactory()
                     .newResponse(defaultResp(), RaftError.EINVAL, "Fail to parse peer id %s", peerIdStr);
             }
         } else {
+            // 请求中没有peerId时，请求所有的nodes
             nodes = NodeManager.getInstance().getNodesByGroupId(groupId);
         }
         if (nodes == null || nodes.isEmpty()) {
-            return RpcFactoryHelper //
+            return RpcFactoryHelper
                 .responseFactory() //
                 .newResponse(defaultResp(), RaftError.ENOENT, "No nodes in group %s", groupId);
         }

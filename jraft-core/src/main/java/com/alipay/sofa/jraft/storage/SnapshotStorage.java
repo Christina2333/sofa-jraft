@@ -67,7 +67,7 @@ public interface SnapshotStorage extends Lifecycle<Void>, Storage {
 
     /**
      * Configure a SnapshotThrottle.
-     *
+     * 设置限流
      * @param snapshotThrottle throttle of snapshot
      */
     void setSnapshotThrottle(final SnapshotThrottle snapshotThrottle);

@@ -135,6 +135,7 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
 
         DescriberManager.getInstance().addDescriber(this);
 
+        // 设置当前节点ip及端口信息
         this.storeOpts = Requires.requireNonNull(opts, "opts");
         Endpoint serverAddress = Requires.requireNonNull(opts.getServerAddress(), "opts.serverAddress");
         final int port = serverAddress.getPort();
@@ -143,8 +144,9 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
             serverAddress = new Endpoint(NetUtil.getLocalCanonicalHostName(), port);
             opts.setServerAddress(serverAddress);
         }
+        // 获取度量上报时间
         final long metricsReportPeriod = opts.getMetricsReportPeriod();
-        // init region options
+        // init region options 1.初始化region options，如果为空，会设置个默认配置
         List<RegionEngineOptions> rOptsList = opts.getRegionEngineOptionsList();
         if (rOptsList == null || rOptsList.isEmpty()) {
             // -1 region
@@ -155,6 +157,7 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
             opts.setRegionEngineOptionsList(rOptsList);
         }
         final String clusterName = this.pdClient.getClusterName();
+        // 遍历region options列表
         for (final RegionEngineOptions rOpts : rOptsList) {
             rOpts.setRaftGroupId(JRaftHelper.getJRaftGroupId(clusterName, rOpts.getRegionId()));
             rOpts.setServerAddress(serverAddress);
@@ -167,19 +170,20 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
                 rOpts.setNodeOptions(opts.getCommonNodeOptions() == null ? new NodeOptions() : opts
                     .getCommonNodeOptions().copy());
             }
+            // 设置质量上报时间
             if (rOpts.getMetricsReportPeriod() <= 0 && metricsReportPeriod > 0) {
                 // extends store opts
                 rOpts.setMetricsReportPeriod(metricsReportPeriod);
             }
         }
-        // init store
+        // init store 2.初始化Store和Store里面的region
         final Store store = this.pdClient.getStoreMetadata(opts);
         if (store == null || store.getRegions() == null || store.getRegions().isEmpty()) {
             LOG.error("Empty store metadata: {}.", store);
             return false;
         }
         this.storeId = store.getId();
-        // init executors
+        // init executors 3. 初始化执行器
         if (this.readIndexExecutor == null) {
             this.readIndexExecutor = StoreEngineHelper.createReadIndexExecutor(opts.getReadIndexCoreThreads());
         }
@@ -192,6 +196,7 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
         }
         // init rpc executors
         final boolean useSharedRpcExecutor = opts.isUseSharedRpcExecutor();
+        // 4. 初始化rpc远程执行器，用来执行RPCServer的Processors
         if (!useSharedRpcExecutor) {
             if (this.cliRpcExecutor == null) {
                 this.cliRpcExecutor = StoreEngineHelper.createCliRpcExecutor(opts.getCliRpcCoreThreads());
@@ -203,16 +208,18 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
                 this.kvRpcExecutor = StoreEngineHelper.createKvRpcExecutor(opts.getKvRpcCoreThreads());
             }
         }
-        // init metrics
+        // init metrics 指标度量
         startMetricReporters(metricsReportPeriod);
-        // init rpc server
+        // init rpc server 5. 初始化rpcServer，供其他服务调用
         this.rpcServer = RaftRpcServerFactory.createRaftRpcServer(serverAddress, this.raftRpcExecutor,
             this.cliRpcExecutor);
+        // 为server加入各种processor
         StoreEngineHelper.addKvStoreRequestProcessor(this.rpcServer, this);
         if (!this.rpcServer.init(null)) {
             LOG.error("Fail to init [RpcServer].");
             return false;
         }
+        // init db store  6. 根据不同的类型选择db
 
         // init watch listener
         this.watchService = new WatchServiceImpl();
@@ -226,13 +233,13 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
         if (this.rawKVStore instanceof Describer) {
             DescriberManager.getInstance().addDescriber((Describer) this.rawKVStore);
         }
-
-        // init all region engine
+        // init all region engine 7. 为每个region初始化RegionEngine
         if (!initAllRegionEngine(opts, store)) {
             LOG.error("Fail to init all [RegionEngine].");
             return false;
         }
         // heartbeat sender
+        // 如果开启了自管理的集群，那么需要初始化心跳发送器
         if (this.pdClient instanceof RemotePlacementDriverClient) {
             HeartbeatOptions heartbeatOpts = opts.getHeartbeatOptions();
             if (heartbeatOpts == null) {
@@ -664,6 +671,12 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
         return true;
     }
 
+    /**
+     * 为store中的每个region初始化RegionEngine
+     * @param opts
+     * @param store
+     * @return
+     */
     private boolean initAllRegionEngine(final StoreEngineOptions opts, final Store store) {
         Requires.requireNonNull(opts, "opts");
         Requires.requireNonNull(store, "store");
@@ -683,6 +696,7 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
         final List<Region> regionList = store.getRegions();
         Requires.requireTrue(rOptsList.size() == regionList.size());
         for (int i = 0; i < rOptsList.size(); i++) {
+            // 获取对应的Region和RegionEngineOptions
             final RegionEngineOptions rOpts = rOptsList.get(i);
             if (!inConfiguration(rOpts.getServerAddress().toString(), rOpts.getInitialServerList())) {
                 continue;
@@ -693,8 +707,10 @@ public class StoreEngine implements Lifecycle<StoreEngineOptions>, Describer {
                 rOpts.setRaftDataPath(Paths.get(baseRaftDataPath, childPath).toString());
             }
             Requires.requireNonNull(region.getRegionEpoch(), "regionEpoch");
+            // 根据Region初始化RegionEngine
             final RegionEngine engine = new RegionEngine(region, this);
             if (engine.init(rOpts)) {
+                // 每个 RegionKVService 对应一个 Region，只处理本身 Region 范畴内的请求
                 final RegionKVService regionKVService = new DefaultRegionKVService(engine);
                 registerRegionKVService(regionKVService);
                 this.regionEngineTable.put(region.getId(), engine);

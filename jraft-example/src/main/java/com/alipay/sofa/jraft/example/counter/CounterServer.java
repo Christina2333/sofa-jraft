@@ -41,10 +41,27 @@ import com.alipay.sofa.jraft.rpc.RpcServer;
  */
 public class CounterServer {
 
+    /**
+     * raft相关
+     */
     private RaftGroupService    raftGroupService;
+    /**
+     * raft节点
+     */
     private Node                node;
+    /**
+     * 状态机
+     */
     private CounterStateMachine fsm;
 
+    /**
+     *
+     * @param dataPath  日志存储地址
+     * @param groupId   集群名称
+     * @param serverId  当前节点ip
+     * @param nodeOptions 集群节点ip列表
+     * @throws IOException
+     */
     public CounterServer(final String dataPath, final String groupId, final PeerId serverId,
                          final NodeOptions nodeOptions) throws IOException {
         // 初始化路径
@@ -69,7 +86,7 @@ public class CounterServer {
         nodeOptions.setSnapshotUri(dataPath + File.separator + "snapshot");
         // 初始化 raft group 服务框架
         this.raftGroupService = new RaftGroupService(groupId, serverId, nodeOptions, rpcServer);
-        // 启动
+        // 【重点】启动，主要是创建一个node并初始化
         this.node = this.raftGroupService.start();
     }
 

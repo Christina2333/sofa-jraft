@@ -231,7 +231,9 @@ public abstract class AbstractPlacementDriverClient implements PlacementDriverCl
 
     @Override
     public Endpoint getLeader(final long regionId, final boolean forceRefresh, final long timeoutMillis) {
+        // 根据clusterName和regionId拼接出raftGroupId
         final String raftGroupId = JRaftHelper.getJRaftGroupId(this.clusterName, regionId);
+        // 从routeTable查找
         PeerId leader = getLeader(raftGroupId, forceRefresh, timeoutMillis);
         if (leader == null && !forceRefresh) {
             // Could not found leader from cache, try again and force refresh cache
@@ -281,6 +283,14 @@ public abstract class AbstractPlacementDriverClient implements PlacementDriverCl
         return routeTable.selectLeader(raftGroupId);
     }
 
+    /**
+     * 选择集群中的一个节点
+     * @param regionId
+     * @param forceRefresh
+     * @param timeoutMillis
+     * @param unExpect
+     * @return
+     */
     @Override
     public Endpoint getLuckyPeer(final long regionId, final boolean forceRefresh, final long timeoutMillis,
                                  final Endpoint unExpect) {
@@ -405,6 +415,7 @@ public abstract class AbstractPlacementDriverClient implements PlacementDriverCl
         Requires.requireTrue(Strings.isNotBlank(initialServerList), "opts.initialServerList is blank");
         conf.parse(initialServerList);
         region.setPeers(JRaftHelper.toPeerList(conf.listPeers()));
+        // 将region存放在regionRouteTable中
         this.regionRouteTable.addOrUpdateRegion(region);
         return region;
     }

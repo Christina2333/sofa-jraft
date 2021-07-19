@@ -37,7 +37,7 @@ import com.alipay.sofa.jraft.util.Requires;
 import com.alipay.sofa.jraft.util.SegmentList;
 
 /**
- * Ballot box for voting.
+ * Ballot box for voting. 投票箱
  * @author boyan (boyan@alibaba-inc.com)
  *
  * 2018-Apr-04 2:32:10 PM

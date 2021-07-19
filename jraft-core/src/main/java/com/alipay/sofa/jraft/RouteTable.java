@@ -240,6 +240,7 @@ public class RouteTable implements Describer {
         rb.setGroupId(groupId);
         final CliRequests.GetLeaderRequest request = rb.build();
         TimeoutException timeoutException = null;
+        // 依次连接每个节点，向每个发送getLeader请求
         for (final PeerId peer : conf) {
             if (!cliClientService.connect(peer.getEndpoint())) {
                 if (st.isOk()) {
@@ -261,6 +262,7 @@ public class RouteTable implements Describer {
                         st.setError(-1, "%s, %s", savedMsg, ((RpcRequests.ErrorResponse) msg).getErrorMsg());
                     }
                 } else {
+                    // 收到getLeader的请求，修改routeTable的leader属性
                     final CliRequests.GetLeaderResponse response = (CliRequests.GetLeaderResponse) msg;
                     updateLeader(groupId, response.getLeaderId());
                     return Status.OK();
@@ -283,6 +285,15 @@ public class RouteTable implements Describer {
         return st;
     }
 
+    /**
+     * 从leader节点更新当前配置
+     * @param cliClientService
+     * @param groupId
+     * @param timeoutMs
+     * @return
+     * @throws InterruptedException
+     * @throws TimeoutException
+     */
     public Status refreshConfiguration(final CliClientService cliClientService, final String groupId,
                                        final int timeoutMs) throws InterruptedException, TimeoutException {
         Requires.requireTrue(!StringUtils.isBlank(groupId), "Blank group id");
