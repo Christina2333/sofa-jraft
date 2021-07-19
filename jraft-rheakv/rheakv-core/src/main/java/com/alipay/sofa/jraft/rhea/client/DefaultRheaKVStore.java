@@ -1185,6 +1185,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
 
     private FutureGroup<Boolean> internalPut(final List<KVEntry> entries, final int retriesLeft,
                                              final Throwable lastCause) {
+        // 从pd中获取kv及对应的region
         final Map<Region, List<KVEntry>> regionMap = this.pdClient
                 .findRegionsByKvEntries(entries, ApiExceptionHelper.isInvalidEpoch(lastCause));
         final List<CompletableFuture<Boolean>> futures = Lists.newArrayListWithCapacity(regionMap.size());
@@ -1201,6 +1202,14 @@ public class DefaultRheaKVStore implements RheaKVStore {
         return new FutureGroup<>(futures);
     }
 
+    /**
+     * 在指定region中插入subEntries
+     * @param region     待插入的region
+     * @param subEntries 待插入数据
+     * @param future
+     * @param retriesLeft 重试次数
+     * @param lastCause
+     */
     private void internalRegionPut(final Region region, final List<KVEntry> subEntries,
                                    final CompletableFuture<Boolean> future, final int retriesLeft,
                                    final Errors lastCause) {
@@ -1219,6 +1228,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
                 }
             }
         } else {
+            // 如果当前不是leader节点，regionEngine为null，会重新请求leader节点
             final BatchPutRequest request = new BatchPutRequest();
             request.setKvEntries(subEntries);
             request.setRegionId(region.getId());
@@ -1803,7 +1813,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
     }
 
     /**
-     * 批量处理event时间的handler
+     * 批量处理event事件的handler
      */
     private class PutBatchingHandler extends AbstractBatchingHandler<KVEvent> {
 
@@ -1814,7 +1824,7 @@ public class DefaultRheaKVStore implements RheaKVStore {
         @SuppressWarnings("unchecked")
         @Override
         public void onEvent(final KVEvent event, final long sequence, final boolean endOfBatch) throws Exception {
-            // 1.把传入的时间加入到集合中
+            // 1.把传入的事件加入到集合中
             this.events.add(event);
             this.cachedBytes += event.kvEntry.length();
             final int size = this.events.size();

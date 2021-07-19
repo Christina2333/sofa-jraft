@@ -42,17 +42,25 @@ public class GetAndPutExample {
         client.shutdown();
     }
 
-    public static void put(final RheaKVStore rheaKVStore) {
-        final CompletableFuture<byte[]> f1 = rheaKVStore.getAndPut(writeUtf8("getAndPut"), writeUtf8("getAndPutValue"));
-        LOG.info("Old value: {}", readUtf8(FutureHelper.get(f1)));
+    public static void put(final RheaKVStore rheaKVStore) throws Exception {
+//        final CompletableFuture<byte[]> f1 = rheaKVStore.getAndPut(writeUtf8("getAndPut"), writeUtf8("getAndPutValue"));
+//        LOG.info("Old value: {}", readUtf8(FutureHelper.get(f1)));
+//
+//        final CompletableFuture<byte[]> f2 = rheaKVStore.getAndPut("getAndPut", writeUtf8("getAndPutValue2"));
+//        LOG.info("Old value: {}", readUtf8(FutureHelper.get(f2)));
+//
+//        final byte[] b1 = rheaKVStore.bGetAndPut(writeUtf8("getAndPut1"), writeUtf8("getAndPutValue3"));
+//        LOG.info("Old value: {}", readUtf8(b1));
+//
+//        final byte[] b2 = rheaKVStore.bGetAndPut(writeUtf8("getAndPut1"), writeUtf8("getAndPutValue4"));
+//        LOG.info("Old value: {}", readUtf8(b2));
 
-        final CompletableFuture<byte[]> f2 = rheaKVStore.getAndPut("getAndPut", writeUtf8("getAndPutValue2"));
-        LOG.info("Old value: {}", readUtf8(FutureHelper.get(f2)));
-
-        final byte[] b1 = rheaKVStore.bGetAndPut(writeUtf8("getAndPut1"), writeUtf8("getAndPutValue3"));
-        LOG.info("Old value: {}", readUtf8(b1));
-
-        final byte[] b2 = rheaKVStore.bGetAndPut(writeUtf8("getAndPut1"), writeUtf8("getAndPutValue4"));
-        LOG.info("Old value: {}", readUtf8(b2));
+        final byte[] key = writeUtf8("hello");
+        final byte[] value = writeUtf8("world");
+        rheaKVStore.put(key, value);
+        LOG.info("Old value: {}", readUtf8(value));
+        CompletableFuture<byte[]> future = rheaKVStore.get(key);
+        byte[] bytes = future.get();
+        LOG.info("输出：" + readUtf8(bytes));
     }
 }

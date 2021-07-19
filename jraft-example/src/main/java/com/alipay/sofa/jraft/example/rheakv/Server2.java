@@ -16,6 +16,7 @@
  */
 package com.alipay.sofa.jraft.example.rheakv;
 
+import com.alipay.sofa.jraft.RouteTable;
 import com.alipay.sofa.jraft.rhea.options.PlacementDriverOptions;
 import com.alipay.sofa.jraft.rhea.options.RheaKVStoreOptions;
 import com.alipay.sofa.jraft.rhea.options.StoreEngineOptions;
@@ -53,5 +54,10 @@ public class Server2 {
         node.start();
         Runtime.getRuntime().addShutdownHook(new Thread(node::stop));
         System.out.println("server2 start OK");
+        while (true) {
+            Thread.sleep(2000);
+            RouteTable instance = RouteTable.getInstance();
+            System.out.println(instance);
+        }
     }
 }
